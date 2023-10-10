@@ -46,6 +46,8 @@ SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim2;
 
+UART_HandleTypeDef huart1;
+
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -56,6 +58,7 @@ static void MX_GPIO_Init(void);
 static void MX_CAN1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -129,6 +132,7 @@ int main(void)
   MX_CAN1_Init();
   MX_SPI1_Init();
   MX_TIM2_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -137,10 +141,52 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
+
+	  /* USER CODE END WHILE */
 	  // Prepare GET1 message for transmission
+
+	  spi_write_buffer[0] = 0;		// empty
+	  spi_write_buffer[1] = 0 | 0; 	//	0 | RST
+	  spi_write_buffer[2] = 0xFF; 	//	timeout value low byte
+	  spi_write_buffer[3] = 0xFF; 	//	timeout value high byte (0xFFFF * 1 us)
+	  spi_write_buffer[4] = 0;		// empty
+	  spi_write_buffer[5] = 0; 		// empty
+	  spi_write_buffer[6] = 0 | 0x13;	// message type | opcode --> ALPHA | GET1
+	  spi_write_buffer[7] = 0xEA; 	// CRC value (i calculated it already)
+
+	  // Transmission (and receiving NOP back)
+	  HAL_SPI_TransmitReceive(&hspi1, spi_write_buffer, spi_read_buffer, sizeof(spi_write_buffer), HAL_MAX_DELAY);
+
+	  HAL_Delay(1);
+
+	  // Prepare NOP message for transmission
+	  spi_write_buffer[0] = 0;
+	  spi_write_buffer[1] = 0;
+	  spi_write_buffer[2] = 0xAA;
+	  spi_write_buffer[3] = 0xAA;
+	  spi_write_buffer[4] = 0;
+	  spi_write_buffer[5] = 0;
+	  spi_write_buffer[6] = 0xD0;
+	  spi_write_buffer[7] = 0xAB;
+
+	  // Transmission (and receiving data back)
+	  HAL_SPI_TransmitReceive(&hspi1, spi_write_buffer, spi_read_buffer, sizeof(spi_write_buffer), HAL_MAX_DELAY);
+
+
+	  // Extract all the data
+	  alpha_high	= spi_read_buffer[0];
+	  alpha_low  	= spi_read_buffer[1] & 0x3F;
+	  error_lsb		= spi_read_buffer[1] >> 6;
+	  virtual_gain 	= spi_read_buffer[4];
+	  roll_cnt   	= spi_read_buffer[6] & 0x3F;
+	  crc_res		= spi_read_buffer[7];
+
+	  // get angle
+	  alpha_lsb = (uint16_t)(alpha_high) << 8 | (uint16_t)(alpha_low);
+	  angle = alpha_lsb * conv_factor;
+    /* USER CODE BEGIN 3 */
+
 
 
   }
@@ -322,6 +368,41 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 2 */
   HAL_TIM_MspPostInit(&htim2);
+
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
 
 }
 
