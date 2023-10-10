@@ -18,10 +18,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "stdio.h"
+#include "stdio.h" // might be redudant since syscalls does this meh
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,7 +45,6 @@ SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim2;
 
-UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 
@@ -65,6 +63,7 @@ static void MX_USART1_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
 int _write(int file, char *ptr, int len)
 {
   /* Implement your write code here, this is used by puts and printf for example */
@@ -73,6 +72,7 @@ int _write(int file, char *ptr, int len)
     ITM_SendChar((*ptr++));
   return len;
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -132,7 +132,6 @@ int main(void)
   MX_CAN1_Init();
   MX_SPI1_Init();
   MX_TIM2_Init();
-  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -141,6 +140,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
 
 
 	  /* USER CODE END WHILE */
@@ -187,7 +187,15 @@ int main(void)
 	  angle = alpha_lsb * conv_factor;
     /* USER CODE BEGIN 3 */
 
+	  printf("Angle in LSB's: %d\r\n", alpha_lsb);
+	  printf("Angle, decimal: %d\r\n", angle);
+	  printf("Roll Count: %d\r\n", roll_cnt);
 
+	  // is this even alive?
+	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_O);
+
+	  // delay for 0.25 sec just to yknow not get spammed
+	  HAL_Delay(250);
 
   }
   /* USER CODE END 3 */
