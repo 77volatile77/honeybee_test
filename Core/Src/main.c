@@ -18,9 +18,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "stdio.h" // might be redudant since syscalls does this meh
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -39,12 +40,7 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-CAN_HandleTypeDef hcan1;
-
 SPI_HandleTypeDef hspi1;
-
-TIM_HandleTypeDef htim2;
-
 
 /* USER CODE BEGIN PV */
 
@@ -53,17 +49,13 @@ TIM_HandleTypeDef htim2;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_CAN1_Init(void);
 static void MX_SPI1_Init(void);
-static void MX_TIM2_Init(void);
-static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
 int _write(int file, char *ptr, int len)
 {
   /* Implement your write code here, this is used by puts and printf for example */
@@ -72,7 +64,6 @@ int _write(int file, char *ptr, int len)
     ITM_SendChar((*ptr++));
   return len;
 }
-
 /* USER CODE END 0 */
 
 /**
@@ -83,32 +74,10 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 
-	// Set up buffers
-	uint8_t spi_read_buffer[8];
-
-	uint8_t spi_write_buffer[8];
-
-	// Store stuff from the resulting data message
-	uint8_t alpha_high;
-
-	uint8_t alpha_low;
-
-	uint8_t crc_res;
-
-	uint8_t virtual_gain;
-
-	uint8_t roll_cnt;
-
-	// Conversion constant
-	const float conv_factor = 0.0219727;
-
-	// Stuff to be calculated
-	uint16_t alpha_lsb; // (uint16_t)(alpha_high) << 8 | (uint16_t)(alpha_low)
-
-	float angle;		// alpha_lsb * conv_factor
-
-	uint8_t error_lsb;
-
+	uint8_t rollCounter = 0;
+	int count = 0;
+	uint8_t spi_write_buf[8] = {0};
+	uint8_t spi_read_buf[8] = {0};
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -129,10 +98,9 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_CAN1_Init();
   MX_SPI1_Init();
-  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 
   /* USER CODE END 2 */
 
@@ -140,63 +108,62 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    /* USER CODE END WHILE */
+
+	/** TODO:
+	 * Now that we know the chip works, I have to:
+	 * finish up the driver FW
+	 * get CAN working.
+	 * i'll probably also change NSS to hardware, just wanted to make sure GPIO was functioning here.
+	 */
+
+	// issue a get1
+	spi_write_buf[0] = 0x00;
+	spi_write_buf[1] = 0x00;
+	spi_write_buf[2] = 0xFF;
+	spi_write_buf[3] = 0xFF;
+	spi_write_buf[4] = 0x00;
+	spi_write_buf[5] = 0x00;
+	spi_write_buf[6] = 0x13;
+	spi_write_buf[7] = 0xEA;
 
 
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET); // pull cs low
 
-	  /* USER CODE END WHILE */
-	  // Prepare GET1 message for transmission
+	HAL_SPI_TransmitReceive(&hspi1, spi_write_buf, spi_read_buf, sizeof(spi_write_buf), HAL_MAX_DELAY);
 
-	  spi_write_buffer[0] = 0;		// empty
-	  spi_write_buffer[1] = 0 | 0; 	//	0 | RST
-	  spi_write_buffer[2] = 0xFF; 	//	timeout value low byte
-	  spi_write_buffer[3] = 0xFF; 	//	timeout value high byte (0xFFFF * 1 us)
-	  spi_write_buffer[4] = 0;		// empty
-	  spi_write_buffer[5] = 0; 		// empty
-	  spi_write_buffer[6] = 0 | 0x13;	// message type | opcode --> ALPHA | GET1
-	  spi_write_buffer[7] = 0xEA; 	// CRC value (i calculated it already)
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 
-	  // Transmission (and receiving NOP back)
-	  HAL_SPI_TransmitReceive(&hspi1, spi_write_buffer, spi_read_buffer, sizeof(spi_write_buffer), HAL_MAX_DELAY);
-
-	  HAL_Delay(1);
-
-	  // Prepare NOP message for transmission
-	  spi_write_buffer[0] = 0;
-	  spi_write_buffer[1] = 0;
-	  spi_write_buffer[2] = 0xAA;
-	  spi_write_buffer[3] = 0xAA;
-	  spi_write_buffer[4] = 0;
-	  spi_write_buffer[5] = 0;
-	  spi_write_buffer[6] = 0xD0;
-	  spi_write_buffer[7] = 0xAB;
-
-	  // Transmission (and receiving data back)
-	  HAL_SPI_TransmitReceive(&hspi1, spi_write_buffer, spi_read_buffer, sizeof(spi_write_buffer), HAL_MAX_DELAY);
+	HAL_Delay(1);
 
 
-	  // Extract all the data
-	  alpha_high	= spi_read_buffer[0];
-	  alpha_low  	= spi_read_buffer[1] & 0x3F;
-	  error_lsb		= spi_read_buffer[1] >> 6;
-	  virtual_gain 	= spi_read_buffer[4];
-	  roll_cnt   	= spi_read_buffer[6] & 0x3F;
-	  crc_res		= spi_read_buffer[7];
+	// issue a NOP
+	spi_write_buf[0] = 0x00;
+	spi_write_buf[1] = 0x00;
+	spi_write_buf[2] = 0xAA;
+	spi_write_buf[3] = 0xAA;
+	spi_write_buf[4] = 0x00;
+	spi_write_buf[5] = 0x00;
+	spi_write_buf[6] = 0xD0;
+	spi_write_buf[7] = 0xAB;
 
-	  // get angle
-	  alpha_lsb = (uint16_t)(alpha_high) << 8 | (uint16_t)(alpha_low);
-	  angle = alpha_lsb * conv_factor;
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET); // pull cs low
+
+	HAL_SPI_TransmitReceive(&hspi1, spi_write_buf, spi_read_buf, sizeof(spi_write_buf), HAL_MAX_DELAY);
+
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+
+	// There's a roll counter in this thing, so if comms are working, this SHOULD blink roughly every 250ms.
+	rollCounter = spi_read_buf[6] & 0x3F;
+
+	if(rollCounter % 2){
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
+	}else{
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
+	}
+	HAL_Delay(250);
+
     /* USER CODE BEGIN 3 */
-
-	  printf("Angle in LSB's: %d\r\n", alpha_lsb);
-	  printf("Angle, decimal: %d\r\n", angle);
-	  printf("Roll Count: %d\r\n", roll_cnt);
-
-	  // is this even alive?
-	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_O);
-
-	  // delay for 0.25 sec just to yknow not get spammed
-	  HAL_Delay(250);
-
   }
   /* USER CODE END 3 */
 }
@@ -246,43 +213,6 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief CAN1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_CAN1_Init(void)
-{
-
-  /* USER CODE BEGIN CAN1_Init 0 */
-
-  /* USER CODE END CAN1_Init 0 */
-
-  /* USER CODE BEGIN CAN1_Init 1 */
-
-  /* USER CODE END CAN1_Init 1 */
-  hcan1.Instance = CAN1;
-  hcan1.Init.Prescaler = 16;
-  hcan1.Init.Mode = CAN_MODE_NORMAL;
-  hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
-  hcan1.Init.TimeSeg1 = CAN_BS1_1TQ;
-  hcan1.Init.TimeSeg2 = CAN_BS2_1TQ;
-  hcan1.Init.TimeTriggeredMode = DISABLE;
-  hcan1.Init.AutoBusOff = DISABLE;
-  hcan1.Init.AutoWakeUp = DISABLE;
-  hcan1.Init.AutoRetransmission = DISABLE;
-  hcan1.Init.ReceiveFifoLocked = DISABLE;
-  hcan1.Init.TransmitFifoPriority = DISABLE;
-  if (HAL_CAN_Init(&hcan1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN CAN1_Init 2 */
-
-  /* USER CODE END CAN1_Init 2 */
-
-}
-
-/**
   * @brief SPI1 Initialization Function
   * @param None
   * @retval None
@@ -303,15 +233,15 @@ static void MX_SPI1_Init(void)
   hspi1.Init.Direction = SPI_DIRECTION_2LINES;
   hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_HARD_OUTPUT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
   hspi1.Init.CRCPolynomial = 7;
   hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
   if (HAL_SPI_Init(&hspi1) != HAL_OK)
   {
     Error_Handler();
@@ -319,98 +249,6 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
 
   /* USER CODE END SPI1_Init 2 */
-
-}
-
-/**
-  * @brief TIM2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM2_Init(void)
-{
-
-  /* USER CODE BEGIN TIM2_Init 0 */
-
-  /* USER CODE END TIM2_Init 0 */
-
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
-
-  /* USER CODE BEGIN TIM2_Init 1 */
-
-  /* USER CODE END TIM2_Init 1 */
-  htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 0;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM2_Init 2 */
-
-  /* USER CODE END TIM2_Init 2 */
-  HAL_TIM_MspPostInit(&htim2);
-
-}
-
-/**
-  * @brief USART1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART1_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART1_Init 0 */
-
-  /* USER CODE END USART1_Init 0 */
-
-  /* USER CODE BEGIN USART1_Init 1 */
-
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART1_Init 2 */
-
-  /* USER CODE END USART1_Init 2 */
 
 }
 
@@ -426,14 +264,19 @@ static void MX_GPIO_Init(void)
 /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
-  /*Configure GPIO pin : PB1 */
-  GPIO_InitStruct.Pin = GPIO_PIN_1;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, LED_G_Pin|GPIO_PIN_4, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : LED_G_Pin PA4 */
+  GPIO_InitStruct.Pin = LED_G_Pin|GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
