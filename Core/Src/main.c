@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "MLX90363.h"
+#include "string.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -31,7 +32,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define CAN_ANGLE_ID 0x321;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -40,16 +41,23 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+CAN_HandleTypeDef hcan1;
+
 SPI_HandleTypeDef hspi1;
 
 /* USER CODE BEGIN PV */
 
+// CAN stuff below:
+uint32_t txMailbox; // after calling the addTxMessage function, it will write the mailbox it used to transmit the message on this variable.
+CAN_TxHeaderTypeDef txHeader; // transmission header, basically stores relevant stuff for the CAN frame.
+// See the CAN init function for other stuff like filter setup + tx setup.
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI1_Init(void);
+static void MX_CAN1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -76,8 +84,10 @@ int main(void)
 
 	uint8_t rollCounter = 0;
 	int count = 0;
-	uint8_t spi_write_buf[8] = {0};
-	uint8_t spi_read_buf[8] = {0};
+	float angle = 0;
+	MLX90363 dev;
+	uint8_t data[4];
+	uint8_t evilFlag = 0;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -99,7 +109,10 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_SPI1_Init();
+  MX_CAN1_Init();
   /* USER CODE BEGIN 2 */
+  MLX90363_init(&hspi1, &dev);
+  uint32_t error;
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 
   /* USER CODE END 2 */
@@ -108,60 +121,27 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
+
+//	  MLX90363_GET1(&dev, Alpha, HAL_MAX_DELAY);
+//	  HAL_Delay(1);
+//	  MLX90363_NOP(&dev, 0xAA);
+
+
+	  angle = MLX90363_getAngle(&dev);
+
+	  memcpy(data, &angle, 4);
+
+	  if(HAL_CAN_AddTxMessage(&hcan1, &txHeader, data, &txMailbox) != HAL_OK){
+		  error = hcan1.ErrorCode;
+		  evilFlag = 1;
+		  Error_Handler();
+	  }
+	  uint32_t myMailbox = txMailbox;
+	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, 1);
+
+	  HAL_Delay(10);
     /* USER CODE END WHILE */
-
-	/** TODO:
-	 * Now that we know the chip works, I have to:
-	 * finish up the driver FW
-	 * get CAN working.
-	 * i'll probably also change NSS to hardware, just wanted to make sure GPIO was functioning here.
-	 */
-
-	// issue a get1
-	spi_write_buf[0] = 0x00;
-	spi_write_buf[1] = 0x00;
-	spi_write_buf[2] = 0xFF;
-	spi_write_buf[3] = 0xFF;
-	spi_write_buf[4] = 0x00;
-	spi_write_buf[5] = 0x00;
-	spi_write_buf[6] = 0x13;
-	spi_write_buf[7] = 0xEA;
-
-
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET); // pull cs low
-
-	HAL_SPI_TransmitReceive(&hspi1, spi_write_buf, spi_read_buf, sizeof(spi_write_buf), HAL_MAX_DELAY);
-
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
-
-	HAL_Delay(1);
-
-
-	// issue a NOP
-	spi_write_buf[0] = 0x00;
-	spi_write_buf[1] = 0x00;
-	spi_write_buf[2] = 0xAA;
-	spi_write_buf[3] = 0xAA;
-	spi_write_buf[4] = 0x00;
-	spi_write_buf[5] = 0x00;
-	spi_write_buf[6] = 0xD0;
-	spi_write_buf[7] = 0xAB;
-
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET); // pull cs low
-
-	HAL_SPI_TransmitReceive(&hspi1, spi_write_buf, spi_read_buf, sizeof(spi_write_buf), HAL_MAX_DELAY);
-
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
-
-	// There's a roll counter in this thing, so if comms are working, this SHOULD blink roughly every 250ms.
-	rollCounter = spi_read_buf[6] & 0x3F;
-
-	if(rollCounter % 2){
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
-	}else{
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
-	}
-	HAL_Delay(250);
 
     /* USER CODE BEGIN 3 */
   }
@@ -187,10 +167,8 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_MSI;
-  RCC_OscInitStruct.MSIState = RCC_MSI_ON;
-  RCC_OscInitStruct.MSICalibrationValue = 0;
-  RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_6;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
@@ -201,15 +179,66 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_MSI;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSE;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief CAN1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CAN1_Init(void)
+{
+
+  /* USER CODE BEGIN CAN1_Init 0 */
+
+  /* USER CODE END CAN1_Init 0 */
+
+  /* USER CODE BEGIN CAN1_Init 1 */
+
+  /* USER CODE END CAN1_Init 1 */
+  hcan1.Instance = CAN1;
+  hcan1.Init.Prescaler = 6;
+  hcan1.Init.Mode = CAN_MODE_NORMAL;
+  hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
+  hcan1.Init.TimeSeg1 = CAN_BS1_13TQ;
+  hcan1.Init.TimeSeg2 = CAN_BS2_2TQ;
+  hcan1.Init.TimeTriggeredMode = DISABLE;
+  hcan1.Init.AutoBusOff = DISABLE;
+  hcan1.Init.AutoWakeUp = DISABLE;
+  hcan1.Init.AutoRetransmission = DISABLE;
+  hcan1.Init.ReceiveFifoLocked = DISABLE;
+  hcan1.Init.TransmitFifoPriority = DISABLE;
+  if (HAL_CAN_Init(&hcan1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CAN1_Init 2 */
+
+  // start the bus
+  if (HAL_CAN_Start(&hcan1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  // filter setup (idk if i have to do this, since this device is only TXing.
+
+  // tx setup
+  txHeader.ExtId = CAN_ANGLE_ID;
+  txHeader.IDE	 = CAN_ID_EXT;	 // using ext id
+  txHeader.RTR	 = CAN_RTR_DATA; // not a remote frame
+  txHeader.DLC 	 = 4;
+  txHeader.TransmitGlobalTime = DISABLE;
+  /* USER CODE END CAN1_Init 2 */
+
 }
 
 /**
@@ -235,7 +264,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -269,10 +298,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, LED_G_Pin|GPIO_PIN_4, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0|GPIO_PIN_4, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : LED_G_Pin PA4 */
-  GPIO_InitStruct.Pin = LED_G_Pin|GPIO_PIN_4;
+  /*Configure GPIO pins : PA0 PA4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_4;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -295,6 +324,8 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, 0);
+  //HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, 1);
   while (1)
   {
   }

@@ -3,3 +3,4 @@
 *.project
 *.mxproject # ?
 *.settings  # ?
+/Debug
