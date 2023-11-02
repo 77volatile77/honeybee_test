@@ -32,7 +32,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define CAN_ANGLE_ID 0x321;
+#define CAN_ANGLE_ID 0x322;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -86,7 +86,7 @@ int main(void)
 	int count = 0;
 	float angle = 0;
 	MLX90363 dev;
-	uint8_t data[4];
+	uint8_t data[2];
 	uint8_t evilFlag = 0;
   /* USER CODE END 1 */
 
@@ -114,7 +114,7 @@ int main(void)
   MLX90363_init(&hspi1, &dev);
   uint32_t error;
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
-
+  uint16_t angle_lsb;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -127,10 +127,17 @@ int main(void)
 //	  HAL_Delay(1);
 //	  MLX90363_NOP(&dev, 0xAA);
 
+	  MLX90363_GET1(&dev, Alpha, HAL_MAX_DELAY);
+	  HAL_Delay(1);
+	  MLX90363_NOP(&dev, 0xAAAA);
 
-	  angle = MLX90363_getAngle(&dev);
+	  angle_lsb = (dev.rxBuffer[1] & 0x3F) << 8;
+      angle_lsb += dev.rxBuffer[0];
 
-	  memcpy(data, &angle, 4);
+      memcpy(data, &angle_lsb, 2);
+	  //angle = MLX90363_getAngle(&dev);
+
+	  //memcpy(data, &angle, 4);
 
 	  if(HAL_CAN_AddTxMessage(&hcan1, &txHeader, data, &txMailbox) != HAL_OK){
 		  error = hcan1.ErrorCode;
@@ -169,7 +176,13 @@ void SystemClock_Config(void)
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 2;
+  RCC_OscInitStruct.PLL.PLLN = 8;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV7;
+  RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
+  RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -179,12 +192,12 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSE;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
     Error_Handler();
   }
@@ -235,7 +248,7 @@ static void MX_CAN1_Init(void)
   txHeader.ExtId = CAN_ANGLE_ID;
   txHeader.IDE	 = CAN_ID_EXT;	 // using ext id
   txHeader.RTR	 = CAN_RTR_DATA; // not a remote frame
-  txHeader.DLC 	 = 4;
+  txHeader.DLC 	 = 2;
   txHeader.TransmitGlobalTime = DISABLE;
   /* USER CODE END CAN1_Init 2 */
 
